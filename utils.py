@@ -18,6 +18,7 @@ import skimage.color
 import skimage.io
 import urllib.request
 import shutil
+import scipy.ndimage
 
 
 # URL from which to download the latest COCO trained weights
@@ -338,6 +339,7 @@ class Dataset(object):
         """
         # Load image
         image = skimage.io.imread(self.image_info[image_id]['path'])
+        print(self.image_info[image_id]['path'])
         # If grayscale. Convert to RGB for consistency.
         if image.ndim != 3:
             image = skimage.color.gray2rgb(image)
@@ -354,14 +356,16 @@ class Dataset(object):
             masks: A bool array of shape [height, width, instance count] with
                 a binary mask per instance.
             class_ids: a 1D array of class IDs of the instance masks.
+            bboxes: array [num_instances, (y1, x1, y2, x2)].
         """
         # Override this function to load a mask from your dataset.
         # Otherwise, it returns an empty mask.
         mask = np.empty([0, 0, 0])
         class_ids = np.empty([0], np.int32)
-        return mask, class_ids
+        bboxes = extract_bboxes(mask)
+        return mask, class_ids, bboxes
 
-
+    
 def resize_image(image, min_dim=None, max_dim=None, padding=False):
     """
     Resizes an image keeping the aspect ratio.
@@ -427,6 +431,20 @@ def resize_mask(mask, scale, padding):
     mask = np.pad(mask, padding, mode='constant', constant_values=0)
     return mask
 
+def resize_bbox(bbox, scale, padding):
+    """Resizes the bbox due to image scaling"""   
+    padT = padding[0][0]
+    padL = padding[1][1]  
+    result = []
+    for box in bbox:
+        result.append(tuple(int(scale*ver) for ver in box))
+    result = np.asarray(result)
+    for row in result:
+        row[0] += padT
+        row[1] += padL
+        row[2] += padT
+        row[3] += padL  
+    return result
 
 def minimize_mask(bbox, mask, mini_shape):
     """Resize masks to a smaller version to cut memory load.
@@ -437,9 +455,10 @@ def minimize_mask(bbox, mask, mini_shape):
     mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=bool)
     for i in range(mask.shape[-1]):
         m = mask[:, :, i]
-        y1, x1, y2, x2 = bbox[i][:4]
+        y1, x1, y2, x2 = bbox[i][:4]        
         m = m[y1:y2, x1:x2]
         if m.size == 0:
+            print("y1: ", y1, "x1: ", x1, "y2: ", y2, "x2: ", x2)
             raise Exception("Invalid bounding box with area of zero")
         m = scipy.misc.imresize(m.astype(float), mini_shape, interp='bilinear')
         mini_mask[:, :, i] = np.where(m >= 128, 1, 0)

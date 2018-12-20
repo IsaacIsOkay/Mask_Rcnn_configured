@@ -6,7 +6,7 @@ Copyright (c) 2017 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
-
+import cv2
 import os
 import sys
 import glob
@@ -1161,7 +1161,8 @@ def load_image_gt(dataset, config, image_id, augment=False,
     """
     # Load image and mask
     image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
+    #added the bbox portion of load_mask
+    mask, class_ids, bbox = dataset.load_mask(image_id)
     shape = image.shape
     image, window, scale, padding = utils.resize_image(
         image,
@@ -1169,6 +1170,7 @@ def load_image_gt(dataset, config, image_id, augment=False,
         max_dim=config.IMAGE_MAX_DIM,
         padding=config.IMAGE_PADDING)
     mask = utils.resize_mask(mask, scale, padding)
+    bbox = utils.resize_bbox(bbox, scale, padding)
 
     # Random horizontal flips.
     if augment:
@@ -1179,7 +1181,7 @@ def load_image_gt(dataset, config, image_id, augment=False,
     # Bounding boxes. Note that some boxes might be all zeros
     # if the corresponding mask got cropped out.
     # bbox: [num_instances, (y1, x1, y2, x2)]
-    bbox = utils.extract_bboxes(mask)
+    #generated bbox : bbox = utils.extract_bboxes(mask)
 
     # Active classes
     # Different datasets have different classes, so track the
@@ -1589,7 +1591,6 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                                              config.BACKBONE_SHAPES,
                                              config.BACKBONE_STRIDES,
                                              config.RPN_ANCHOR_STRIDE)
-
     # Keras requires a generator to run indefinately.
     while True:
         try:
@@ -1603,7 +1604,12 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
                 load_image_gt(dataset, config, image_id, augment=augment,
                               use_mini_mask=config.USE_MINI_MASK)
-
+            #save image_gt
+            '''
+            print(image_meta)
+            cv2.imwrite("/media/phenobot/ISAACTEGLER/data_preperation/testImg.jpg", image)
+            print(gt_boxes)
+            '''
             # Skip images that have no instances. This can happen in cases
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
@@ -1696,7 +1702,6 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                             batch_mrcnn_class_ids, -1)
                         outputs.extend(
                             [batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
-
                 yield inputs, outputs
 
                 # start a new batch
@@ -2128,8 +2133,7 @@ class MaskRCNN():
                 self.epoch = int(m.group(6)) + 1
 
         # Directory for training logs
-        self.log_dir = os.path.join(self.model_dir, "{}{:%Y%m%dT%H%M}".format(
-            self.config.NAME.lower(), now))
+        self.log_dir = self.model_dir
 
         # Path to save after each epoch. Include placeholders that get filled by Keras.
         self.checkpoint_path = os.path.join(self.log_dir, "mask_rcnn_{}_*epoch*.h5".format(
@@ -2176,15 +2180,16 @@ class MaskRCNN():
         val_generator = data_generator(val_dataset, self.config, shuffle=True,
                                        batch_size=self.config.BATCH_SIZE,
                                        augment=False)
-
+        callbacks = []
+        '''
         # Callbacks
-        callbacks = [
+        callbacks = [  
             keras.callbacks.TensorBoard(log_dir=self.log_dir,
-                                        histogram_freq=0, write_graph=True, write_images=False),
+                histogram_freq=0, write_graph=True, write_images=False),        
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
                                             verbose=0, save_weights_only=True),
         ]
-
+        '''
         # Train
         log("\nStarting at epoch {}. LR={}\n".format(self.epoch, learning_rate))
         log("Checkpoint Path: {}".format(self.checkpoint_path))
@@ -2197,8 +2202,6 @@ class MaskRCNN():
             epochs=epochs,
             steps_per_epoch=self.config.STEPS_PER_EPOCH,
             callbacks=callbacks,
-            validation_data=next(val_generator),
-            validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=max(self.config.BATCH_SIZE // 2, 2),
             use_multiprocessing=True,
